@@ -1,115 +1,216 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from .webdriver_config import create_chrome_driver, scroll_down
 import time
 
 
-def scroll_down(driver, pixels):
-    driver.execute_script(f"window.scrollBy(0, {pixels});")
-
-
 def get_transcription(url, output_file):
-    # Configuração do WebDriver com auto-instalação
-    chrome_options = Options()
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--headless")  # Modo headless
-    chrome_options.add_argument("--no-sandbox")  # Necessário em alguns ambientes
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Necessário em alguns ambientes
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-
-    # Usar WebDriverManager para instalar automaticamente o ChromeDriver
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
+    """
+    Extrai a transcrição de um vídeo do YouTube
+    
+    Args:
+        url (str): URL do vídeo do YouTube
+        output_file (str): Caminho para salvar o arquivo de transcrição
+    
+    Returns:
+        bool: True se a transcrição foi extraída com sucesso, False caso contrário
+    """
+    driver = None
     try:
-        # Acessar a página desejada
+        print("Inicializando WebDriver...")
+        driver = create_chrome_driver(headless=False)
+        
+        print("Acessando o vídeo...")
         driver.get(url)
-        print("Página carregada com sucesso")
-
-        # Espera explícita para o elemento "Descrição do vídeo"
-        print("Indo clicar na descrição")
-        scroll_down(driver, 400)
+        
+        # Aguardar carregamento da página
         time.sleep(5)
         
-        xpath_open_description = '//*[@id="expand"]'
-        try:
-            description_video = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.XPATH, xpath_open_description))
-            )
-            description_video.click()
-            print("Descrição expandida com sucesso")
-        except TimeoutException:
-            print("O elemento de descrição do vídeo não foi encontrado a tempo.")
+        print("Procurando botão de descrição...")
+        success = _click_description_button(driver)
+        if not success:
+            print("Não foi possível encontrar o botão de descrição")
             return False
-
-        # Espera explícita para o botão de "Ver Transcrição"
-        print("Indo apertar na transcrição")
-        scroll_down(driver, 100)
-        time.sleep(3)
         
-        xpath_view_transcription = '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button/yt-touch-feedback-shape/div'
-        try:
-            print("Tentando achar botão de ver transcrição")
-            view_transcription_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.XPATH, xpath_view_transcription))
-            )
-            view_transcription_button.click()
-            print("Botão de transcrição clicado")
-        except TimeoutException:
-            print("O botão de ver transcrição não foi encontrado a tempo.")
+        print("Procurando botão de transcrição...")
+        success = _click_transcription_button(driver)
+        if not success:
+            print("Não foi possível encontrar o botão de transcrição")
             return False
-
-        print("Aguardando carregamento da transcrição...")
-        time.sleep(10)
         
-        # Espera explícita para garantir que a transcrição foi carregada
-        try:
-            WebDriverWait(driver, 60).until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "ytd-transcript-segment-renderer .segment-text")
-                )
-            )
-            print("Transcrição carregada com sucesso")
-        except TimeoutException:
-            print("A transcrição não foi carregada a tempo.")
+        print("Extraindo transcrição...")
+        success = _extract_transcription_text(driver, output_file)
+        if not success:
+            print("Não foi possível extrair a transcrição")
             return False
-
-        # Código JavaScript para coletar os textos
-        script = """
-        var segments = document.querySelectorAll('ytd-transcript-segment-renderer .segment-text');
-        var texts = [];
-        segments.forEach(function(segment) {
-            texts.push(segment.textContent.trim());
-        });
-        return texts;
-        """
-
-        # Executar o script e obter os textos
-        texts = driver.execute_script(script)
         
-        if not texts:
-            print("Nenhuma transcrição foi encontrada")
-            return False
-
-        # Salvar os textos em um arquivo .txt
-        with open(output_file, "w", encoding="utf-8") as file:
-            for text in texts:
-                file.write(text + "\n")
-
-        print(f"Transcrição salva com sucesso em: {output_file}")
-        print(f"Total de segmentos extraídos: {len(texts)}")
+        print("Transcrição extraída com sucesso!")
         return True
-
+        
     except Exception as e:
         print(f"Erro durante a extração da transcrição: {e}")
         return False
+        
     finally:
-        driver.quit()
-        print("Driver fechado")
+        if driver:
+            driver.quit()
+
+
+def _click_description_button(driver):
+    """
+    Clica no botão para expandir a descrição do vídeo
+    
+    Args:
+        driver: Instância do WebDriver
+    
+    Returns:
+        bool: True se conseguiu clicar, False caso contrário
+    """
+    try:
+        scroll_down(driver, 400)
+        time.sleep(3)
+        
+        # Múltiplos seletores para o botão de descrição
+        description_selectors = [
+            '//*[@id="description-inline-expander"]',
+            '//*[@id="expand"]',
+            '//tp-yt-paper-button[@id="expand"]',
+            '//button[@id="expand"]',
+            '//*[@aria-label="Mostrar mais"]',
+        ]
+        
+        for selector in description_selectors:
+            try:
+                description_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+                description_button.click()
+                time.sleep(2)
+                return True
+            except TimeoutException:
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"Erro ao clicar no botão de descrição: {e}")
+        return False
+
+
+def _click_transcription_button(driver):
+    """
+    Clica no botão "Ver transcrição"
+    
+    Args:
+        driver: Instância do WebDriver
+    
+    Returns:
+        bool: True se conseguiu clicar, False caso contrário
+    """
+    try:
+        scroll_down(driver, 100)
+        time.sleep(3)
+        
+        # Múltiplos seletores para o botão de transcrição
+        transcription_selectors = [
+            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape',
+            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button',
+            '//button[contains(text(), "Mostrar transcrição")]',
+            '//button[contains(text(), "Show transcript")]',
+            '//yt-button-shape/button[contains(@aria-label, "transcript")]',
+            '//*[contains(@class, "style-scope ytd-video-description-transcript-section-renderer")]//button'
+        ]
+        
+        for selector in transcription_selectors:
+            try:
+                transcription_button = WebDriverWait(driver, 15).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+                transcription_button.click()
+                time.sleep(3)
+                return True
+            except TimeoutException:
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"Erro ao clicar no botão de transcrição: {e}")
+        return False
+
+
+def _extract_transcription_text(driver, output_file):
+    """
+    Extrai o texto da transcrição e salva em arquivo
+    
+    Args:
+        driver: Instância do WebDriver
+        output_file (str): Caminho do arquivo de saída
+    
+    Returns:
+        bool: True se conseguiu extrair, False caso contrário
+    """
+    try:
+        print("Aguardando carregamento da transcrição...")
+        time.sleep(10)
+        
+        # Aguardar elementos da transcrição aparecerem
+        transcript_selectors = [
+            "ytd-transcript-segment-renderer .segment-text",
+            ".ytd-transcript-segment-renderer",
+            "[class*='transcript'] [class*='segment']"
+        ]
+        
+        texts = []
+        for selector in transcript_selectors:
+            try:
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                
+                # Script JavaScript para extrair texto
+                if selector == "ytd-transcript-segment-renderer .segment-text":
+                    script = """
+                    var segments = document.querySelectorAll('ytd-transcript-segment-renderer .segment-text');
+                    var texts = [];
+                    segments.forEach(function(segment) {
+                        texts.push(segment.textContent.trim());
+                    });
+                    return texts;
+                    """
+                else:
+                    script = f"""
+                    var segments = document.querySelectorAll('{selector}');
+                    var texts = [];
+                    segments.forEach(function(segment) {{
+                        texts.push(segment.textContent.trim());
+                    }});
+                    return texts;
+                    """
+                
+                texts = driver.execute_script(script)
+                
+                if texts and len(texts) > 0:
+                    break
+                    
+            except TimeoutException:
+                continue
+        
+        if not texts:
+            print("Nenhum texto de transcrição encontrado")
+            return False
+        
+        # Salvar em arquivo
+        with open(output_file, "w", encoding="utf-8") as file:
+            for text in texts:
+                if text.strip():  # Só escreve se o texto não estiver vazio
+                    file.write(text + "\n")
+        
+        print(f"Transcrição salva com {len(texts)} segmentos")
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao extrair texto da transcrição: {e}")
+        return False
