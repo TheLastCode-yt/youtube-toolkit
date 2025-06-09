@@ -81,17 +81,21 @@ def _click_description_button(driver):
             '//*[@aria-label="Mostrar mais"]',
         ]
         
-        for selector in description_selectors:
-            try:
-                description_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, selector))
-                )
-                description_button.click()
-                time.sleep(2)
-                return True
-            except TimeoutException:
-                continue
-        
+        for attempt in range(2):  # Tenta duas vezes: normal + após fechar modal
+            for selector in description_selectors:
+                try:
+                    description_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    description_button.click()
+                    time.sleep(2)
+                    return True
+                except TimeoutException:
+                    continue
+
+            if attempt == 0:
+                _close_youtube_premium_modal(driver)  
+
         return False
         
     except Exception as e:
@@ -123,21 +127,58 @@ def _click_transcription_button(driver):
             '//*[contains(@class, "style-scope ytd-video-description-transcript-section-renderer")]//button'
         ]
         
-        for selector in transcription_selectors:
-            try:
-                transcription_button = WebDriverWait(driver, 15).until(
-                    EC.element_to_be_clickable((By.XPATH, selector))
-                )
-                transcription_button.click()
-                time.sleep(3)
-                return True
-            except TimeoutException:
-                continue
+        for attempt in range(2):  
+            for selector in transcription_selectors:
+                try:
+                    transcription_button = WebDriverWait(driver, 15).until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    transcription_button.click()
+                    time.sleep(3)
+                    return True
+                except TimeoutException:
+                    continue
+
+            if attempt == 0:
+                _close_youtube_premium_modal(driver)
+
         
         return False
         
     except Exception as e:
         print(f"Erro ao clicar no botão de transcrição: {e}")
+        return False
+
+def _close_youtube_premium_modal(driver):
+    """
+    Fecha o modal do YouTube Premium, se estiver visível.
+
+    Args:
+        driver: Instância do WebDriver
+    """
+    try:
+        print("Verificando se o modal do YouTube Premium está visível...")
+        modal_selectors = [
+            '//yt-button-renderer[@id="dismiss-button"]//button',
+            '//button[@aria-label="Fechar"]',
+            '//button[contains(@aria-label, "Close")]',
+            '//button[contains(text(), "Não agora")]',
+            '//button[contains(text(), "No thanks")]',
+        ]
+        for selector in modal_selectors:
+            try:
+                button = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+                button.click()
+                print("Modal do YouTube Premium fechado.")
+                return True
+            except TimeoutException:
+                continue
+        print("Nenhum modal do YouTube Premium encontrado.")
+        return False
+    except Exception as e:
+        print(f"Erro ao tentar fechar o modal: {e}")
         return False
 
 
