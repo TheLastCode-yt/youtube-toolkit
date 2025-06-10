@@ -62,7 +62,7 @@ def translate_text(input_file_path, output_file_path):
             output_file.write("")
         
         print("Inicializando WebDriver para tradução...")
-        driver = create_chrome_driver(headless=True)
+        driver = create_chrome_driver(headless=False)
         
         print("Acessando Google Translate...")
         driver.get("https://translate.google.com/?hl=pt-BR&tab=wT&sl=en&tl=pt&op=translate")

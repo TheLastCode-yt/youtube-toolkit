@@ -34,6 +34,12 @@ def get_transcription(url, output_file):
             print("Não foi possível encontrar o botão de descrição")
             return False
         
+        print("Tentando fechar modal do YouTube Premium...")
+        success =_close_youtube_premium_modal(driver)
+        if not success:
+            print("Não foi possível fechar o modal do YouTube Premium")
+            return False
+
         print("Procurando botão de transcrição...")
         success = _click_transcription_button(driver)
         if not success:
@@ -61,18 +67,17 @@ def get_transcription(url, output_file):
 def _click_description_button(driver):
     """
     Clica no botão para expandir a descrição do vídeo
-    
+
     Args:
         driver: Instância do WebDriver
-    
+
     Returns:
         bool: True se conseguiu clicar, False caso contrário
     """
     try:
-        scroll_down(driver, 400)
-        time.sleep(3)
-        
-        # Múltiplos seletores para o botão de descrição
+        scroll_down(driver, 450)
+        time.sleep(2)
+
         description_selectors = [
             '//*[@id="description-inline-expander"]',
             '//*[@id="expand"]',
@@ -80,11 +85,11 @@ def _click_description_button(driver):
             '//button[@id="expand"]',
             '//*[@aria-label="Mostrar mais"]',
         ]
-        
+
         for attempt in range(2):  # Tenta duas vezes: normal + após fechar modal
             for selector in description_selectors:
                 try:
-                    description_button = WebDriverWait(driver, 10).until(
+                    description_button = WebDriverWait(driver, 6).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
                     description_button.click()
@@ -94,10 +99,22 @@ def _click_description_button(driver):
                     continue
 
             if attempt == 0:
-                _close_youtube_premium_modal(driver)  
+                modal_closed = _close_youtube_premium_modal(driver)
+                if modal_closed:
+                    print("Tentando novamente clicar na descrição após fechar o modal...")
+                    for selector in description_selectors:
+                        try:
+                            description_button = WebDriverWait(driver, 6).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                            description_button.click()
+                            time.sleep(2)
+                            return True
+                        except TimeoutException:
+                            continue
 
         return False
-        
+
     except Exception as e:
         print(f"Erro ao clicar no botão de descrição: {e}")
         return False
@@ -106,31 +123,34 @@ def _click_description_button(driver):
 def _click_transcription_button(driver):
     """
     Clica no botão "Ver transcrição"
-    
+
     Args:
         driver: Instância do WebDriver
-    
+
     Returns:
         bool: True se conseguiu clicar, False caso contrário
     """
     try:
         scroll_down(driver, 100)
         time.sleep(3)
-        
-        # Múltiplos seletores para o botão de transcrição
+
         transcription_selectors = [
+            '//*[@id="primary-button"]/ytd-button-renderer',
             '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape',
+            '//*[@id="button-container"]',
             '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button',
+            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button/yt-touch-feedback-shape/div',
             '//button[contains(text(), "Mostrar transcrição")]',
             '//button[contains(text(), "Show transcript")]',
             '//yt-button-shape/button[contains(@aria-label, "transcript")]',
-            '//*[contains(@class, "style-scope ytd-video-description-transcript-section-renderer")]//button'
+            '//*[contains(@class, "style-scope ytd-video-description-transcript-section-renderer")]//button',
+            '//button[contains(@aria-label, "Mostrar transcrição")]'
         ]
-        
-        for attempt in range(2):  
+
+        for attempt in range(1):
             for selector in transcription_selectors:
                 try:
-                    transcription_button = WebDriverWait(driver, 15).until(
+                    transcription_button = WebDriverWait(driver, 3).until(
                         EC.element_to_be_clickable((By.XPATH, selector))
                     )
                     transcription_button.click()
@@ -140,11 +160,30 @@ def _click_transcription_button(driver):
                     continue
 
             if attempt == 0:
-                _close_youtube_premium_modal(driver)
+                modal_closed = _close_youtube_premium_modal(driver)
+                if modal_closed:
+                    print("Tentando novamente clicar após fechar o modal...")
 
-        
+        # Fallback: buscar manualmente botões com texto ou aria-label contendo "transcrição"
+        print("Tentando fallback baseado em texto/aria-label...")
+        all_buttons = driver.find_elements(By.TAG_NAME, "button")
+        for btn in all_buttons:
+            try:
+                text = btn.text.lower()
+                aria_label = btn.get_attribute("aria-label") or ""
+                aria_label = aria_label.lower()
+
+                if "transcrição" in text or "transcript" in text or \
+                   "transcrição" in aria_label or "transcript" in aria_label:
+                    if btn.is_enabled() and btn.is_displayed():
+                        btn.click()
+                        time.sleep(3)
+                        return True
+            except Exception:
+                continue
+
         return False
-        
+
     except Exception as e:
         print(f"Erro ao clicar no botão de transcrição: {e}")
         return False
@@ -159,15 +198,20 @@ def _close_youtube_premium_modal(driver):
     try:
         print("Verificando se o modal do YouTube Premium está visível...")
         modal_selectors = [
+            '//*[@id="dismiss-button"]',
+           '//*[@id="dismiss-button"]/yt-button-shape', 
             '//yt-button-renderer[@id="dismiss-button"]//button',
+            '//*[@id="dismiss-button"]/yt-button-shape/button',
+            '//*[@id="dismiss-button"]/yt-button-shape',
             '//button[@aria-label="Fechar"]',
             '//button[contains(@aria-label, "Close")]',
             '//button[contains(text(), "Não agora")]',
             '//button[contains(text(), "No thanks")]',
+            '//button[contains(text(), "Agora não")]',
         ]
         for selector in modal_selectors:
             try:
-                button = WebDriverWait(driver, 5).until(
+                button = WebDriverWait(driver, 3).until(
                     EC.element_to_be_clickable((By.XPATH, selector))
                 )
                 button.click()
