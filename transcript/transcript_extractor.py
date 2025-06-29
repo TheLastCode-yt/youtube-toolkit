@@ -119,74 +119,40 @@ def _click_description_button(driver):
         print(f"Erro ao clicar no botão de descrição: {e}")
         return False
 
-
-def _click_transcription_button(driver):
-    """
-    Clica no botão "Ver transcrição"
-
-    Args:
-        driver: Instância do WebDriver
-
-    Returns:
-        bool: True se conseguiu clicar, False caso contrário
-    """
+def _click_transcription_button(driver): 
     try:
         scroll_down(driver, 100)
-        time.sleep(3)
+        time.sleep(2)
 
-        transcription_selectors = [
-            '//*[@id="primary-button"]/ytd-button-renderer',
-            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape',
-            '//*[@id="button-container"]',
-            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button',
-            '//*[@id="primary-button"]/ytd-button-renderer/yt-button-shape/button/yt-touch-feedback-shape/div',
-            '//button[contains(text(), "Mostrar transcrição")]',
-            '//button[contains(text(), "Show transcript")]',
-            '//yt-button-shape/button[contains(@aria-label, "transcript")]',
-            '//*[contains(@class, "style-scope ytd-video-description-transcript-section-renderer")]//button',
-            '//button[contains(@aria-label, "Mostrar transcrição")]'
-        ]
+        _close_youtube_premium_modal(driver)
+        time.sleep(1)
 
-        for attempt in range(1):
-            for selector in transcription_selectors:
-                try:
-                    transcription_button = WebDriverWait(driver, 3).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    transcription_button.click()
-                    time.sleep(3)
-                    return True
-                except TimeoutException:
-                    continue
+        js_code = '''
+        const btn = [...document.querySelectorAll("button")]
+          .find(el => el.textContent.includes("Mostrar transcrição") || el.getAttribute("aria-label") === "Mostrar transcrição");
+        if (btn) {
+          btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          setTimeout(() => btn.click(), 500);
+        }
+        '''
+        driver.execute_script(js_code)
+        print("Comando JavaScript enviado")
 
-            if attempt == 0:
-                modal_closed = _close_youtube_premium_modal(driver)
-                if modal_closed:
-                    print("Tentando novamente clicar após fechar o modal...")
+        # Aguarda a transcrição aparecer
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-transcript-segment-renderer"))
+        )
+        print("Transcrição aberta com sucesso via JS!")
+        return True
 
-        # Fallback: buscar manualmente botões com texto ou aria-label contendo "transcrição"
-        print("Tentando fallback baseado em texto/aria-label...")
-        all_buttons = driver.find_elements(By.TAG_NAME, "button")
-        for btn in all_buttons:
-            try:
-                text = btn.text.lower()
-                aria_label = btn.get_attribute("aria-label") or ""
-                aria_label = aria_label.lower()
-
-                if "transcrição" in text or "transcript" in text or \
-                   "transcrição" in aria_label or "transcript" in aria_label:
-                    if btn.is_enabled() and btn.is_displayed():
-                        btn.click()
-                        time.sleep(3)
-                        return True
-            except Exception:
-                continue
-
+    except TimeoutException:
+        print("Transcrição não apareceu após clique via JavaScript")
         return False
-
     except Exception as e:
-        print(f"Erro ao clicar no botão de transcrição: {e}")
+        print(f"Erro ao tentar abrir transcrição com JS: {e}")
         return False
+
+
 
 def _close_youtube_premium_modal(driver):
     """
